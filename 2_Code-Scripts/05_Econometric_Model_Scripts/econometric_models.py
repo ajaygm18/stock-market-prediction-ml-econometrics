@@ -11,9 +11,9 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 # --- Configuration ---
-PROCESSED_DATA_DIR = '01_Data_Files/Cleaned_Data'
+PROCESSED_DATA_DIR = '1_Data_Files/02_Cleaned_Data'
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, 'processed_stock_data_2010-2023.csv')
-RESULTS_DIR = '03_Results'
+RESULTS_DIR = '3_Model_Outputs'
 ECONOMETRIC_RESULTS_DIR = os.path.join(RESULTS_DIR, 'Econometric_Models')
 
 # Select a ticker for the case study
