@@ -6,10 +6,13 @@ import numpy as np
 
 # --- Configuration ---
 # Input files from the data acquisition step.
-RAW_DATA_DIR = '01_Data_Files/Raw_Data'
-PROCESSED_DATA_DIR = '01_Data_Files/Cleaned_Data'
-STOCK_DATA_FILE = os.path.join(RAW_DATA_DIR, 'stock_data_2010-2023.csv')
-MACRO_DATA_FILE = os.path.join(RAW_DATA_DIR, 'macroeconomic_indicators_raw.csv')
+RAW_DATA_DIR = '../../1_Data_Files/01_Raw_Data'
+STOCK_DATA_DIR = os.path.join(RAW_DATA_DIR, '001_Stock_Market_Data')
+MACRO_DATA_DIR = os.path.join(RAW_DATA_DIR, '002_Macroeconomic_Indicators')
+PROCESSED_DATA_DIR = '../../1_Data_Files/02_Cleaned_Data'
+
+STOCK_DATA_FILE = os.path.join(STOCK_DATA_DIR, 'stock_data_2010-2023.csv')
+MACRO_DATA_FILE = os.path.join(MACRO_DATA_DIR, 'macroeconomic_indicators_raw.csv')
 
 # Output file for the processed data.
 PROCESSED_OUTPUT_FILE = os.path.join(PROCESSED_DATA_DIR, 'processed_stock_data_2010-2023.csv')
