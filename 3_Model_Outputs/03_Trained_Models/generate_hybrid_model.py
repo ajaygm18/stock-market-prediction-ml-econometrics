@@ -204,28 +204,25 @@ def generate_hybrid_model_file():
     # Train the hybrid model
     history = hybrid.fit(sample_data, validation_split=0.2)
     
-    # Create the combined Keras model
-    print("Creating combined Keras model...")
-    combined_model = hybrid.create_combined_model()
-    
-    # Transfer weights from the trained LSTM to the combined model
-    # Get the LSTM layers from both models
-    lstm_layers_trained = [layer for layer in hybrid.lstm_model.layers if 'lstm' in layer.name.lower() or 'dense' in layer.name.lower()]
-    lstm_layers_combined = [layer for layer in combined_model.layers if 'lstm' in layer.name.lower() or 'dense' in layer.name.lower()]
-    
-    # Copy weights
-    for i, (trained_layer, combined_layer) in enumerate(zip(lstm_layers_trained, lstm_layers_combined)):
-        if trained_layer.get_weights():
-            combined_layer.set_weights(trained_layer.get_weights())
-    
     # Create directory if it doesn't exist
     os.makedirs('Trained_Models', exist_ok=True)
     
-    # Save the model
-    model_path = 'Trained_Models/hybrid_model.h5'
-    combined_model.save(model_path)
+    # Save the LSTM model directly with the newer format
+    model_path = 'Trained_Models/hybrid_model.keras'
+    hybrid.lstm_model.save(model_path, save_format='keras')
     
-    print(f"✅ Hybrid model saved successfully to {model_path}")
+    print(f"✅ Hybrid LSTM model saved successfully to {model_path}")
+    
+    # Also save in H5 format for compatibility
+    h5_model_path = 'Trained_Models/hybrid_model.h5'
+    try:
+        # Recompile with string-based loss to avoid serialization issues
+        hybrid.lstm_model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        hybrid.lstm_model.save(h5_model_path, save_format='h5')
+        print(f"✅ Hybrid LSTM model also saved in H5 format to {h5_model_path}")
+    except Exception as e:
+        print(f"⚠️  Could not save H5 format: {e}")
+        print("   Using Keras format is recommended for newer TensorFlow versions")
     
     # Save additional model information
     model_info = {
@@ -235,7 +232,8 @@ def generate_hybrid_model_file():
         'arima_params': hybrid.arima_fitted.params.tolist() if hybrid.arima_fitted else None,
         'training_samples': len(sample_data),
         'model_type': 'Hybrid ARIMA-LSTM',
-        'framework': 'TensorFlow/Keras + statsmodels'
+        'framework': 'TensorFlow/Keras + statsmodels',
+        'description': 'LSTM component of hybrid model (ARIMA parameters saved separately)'
     }
     
     # Save model metadata

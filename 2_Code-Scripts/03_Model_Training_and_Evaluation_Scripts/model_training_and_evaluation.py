@@ -11,9 +11,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- Configuration ---
-PROCESSED_DATA_DIR = '01_Data_Files/Cleaned_Data'
+PROCESSED_DATA_DIR = '../../1_Data_Files/02_Cleaned_Data'
 PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, 'processed_stock_data_2010-2023.csv')
-RESULTS_DIR = '03_Results'
+RESULTS_DIR = '../../3_Model_Outputs/02_Evaluation_Metrics'
 RESULTS_FILE = os.path.join(RESULTS_DIR, 'model_performance_comparison.csv')
 
 # Select a ticker for the case study
@@ -56,12 +56,89 @@ def create_sequences(data, n_steps):
         y.append(seq_y)
     return np.array(X), np.array(y)
 
+def generate_detailed_analysis(y_true, y_pred, dates, model_name="Hybrid"):
+    """Generate detailed error analysis including directional accuracy"""
+    print(f"Generating detailed analysis for {model_name} model...")
+    
+    # Ensure same length
+    min_length = min(len(y_true), len(y_pred), len(dates))
+    y_true = y_true[:min_length]
+    y_pred = y_pred[:min_length]
+    dates = dates[:min_length]
+    
+    # Calculate errors
+    raw_errors = y_pred - y_true
+    percentage_errors = (raw_errors / np.where(y_true != 0, y_true, 1)) * 100
+    
+    # Calculate directions
+    actual_directions = ['Up' if i < len(y_true)-1 and y_true[i+1] > y_true[i] else 'Down' 
+                        for i in range(len(y_true)-1)] + ['Up']  # Last day direction
+    predicted_directions = ['Up' if i < len(y_pred)-1 and y_pred[i+1] > y_pred[i] else 'Down' 
+                           for i in range(len(y_pred)-1)] + ['Up']  # Last day direction
+    
+    # Calculate directional accuracy
+    directional_accuracy = [1 if actual_directions[i] == predicted_directions[i] else 0 
+                           for i in range(len(actual_directions))]
+    
+    # Create detailed analysis dataframe
+    analysis_df = pd.DataFrame({
+        'Date': dates,
+        'Actual': y_true,
+        'Predicted': y_pred,
+        'Raw_Error': raw_errors,
+        'Percentage_Error': percentage_errors,
+        'Actual_Direction': actual_directions,
+        'Predicted_Direction': predicted_directions,
+        'Directional_Accuracy': directional_accuracy
+    })
+    
+    # Save to file
+    error_analysis_file = os.path.join(RESULTS_DIR, 'error_analysis.csv')
+    with open(error_analysis_file, 'w') as f:
+        f.write(f"# Description: Detailed error analysis for the {model_name} model on the test set.\n")
+        f.write("# Includes raw error, percentage error, and directional accuracy.\n")
+    
+    analysis_df.to_csv(error_analysis_file, mode='a', index=False)
+    
+    # Calculate and print summary statistics
+    overall_directional_accuracy = np.mean(directional_accuracy) * 100
+    print(f"📊 Overall Directional Accuracy: {overall_directional_accuracy:.2f}%")
+    
+    # Save predictions to separate file
+    predictions_file = os.path.join('../../3_Model_Outputs/01_Raw_Prediction_Files', f'{model_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")}_predictions.csv')
+    with open(predictions_file, 'w') as f:
+        f.write(f"# Description: Raw predictions from the {model_name} model for {TICKER_TO_MODEL}.\n")
+        f.write(f"# These predictions incorporate the best performing model architecture.\n")
+    
+    pred_df = pd.DataFrame({
+        'Date': dates,
+        'Actual': y_true,
+        'Predicted': y_pred
+    })
+    pred_df.to_csv(predictions_file, mode='a', index=False)
+    
+    print(f"📁 Detailed analysis saved to: {error_analysis_file}")
+    print(f"📁 Predictions saved to: {predictions_file}")
+    
 def evaluate_model(y_true, y_pred, model_name):
     """Calculates and returns performance metrics."""
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae = mean_absolute_error(y_true, y_pred)
+    # Convert to numpy arrays to avoid pandas alignment issues
+    y_true_np = np.array(y_true)
+    y_pred_np = np.array(y_pred)
+    
+    # Ensure same length
+    min_length = min(len(y_true_np), len(y_pred_np))
+    y_true_np = y_true_np[:min_length]
+    y_pred_np = y_pred_np[:min_length]
+    
+    rmse = np.sqrt(mean_squared_error(y_true_np, y_pred_np))
+    mae = mean_absolute_error(y_true_np, y_pred_np)
     # MAPE (Mean Absolute Percentage Error) is often useful for price prediction
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    # Avoid division by zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        mape = np.mean(np.abs((y_true_np - y_pred_np) / np.where(y_true_np != 0, y_true_np, 1))) * 100
+        mape = np.nan_to_num(mape, nan=0.0, posinf=0.0, neginf=0.0)
+    
     print(f"{model_name} Performance -> RMSE: {rmse:.4f}, MAE: {mae:.4f}, MAPE: {mape:.2f}%")
     return {'Model': model_name, 'RMSE': rmse, 'MAE': mae, 'MAPE': mape}
 
@@ -80,7 +157,8 @@ def train_evaluate_arima(train_data, test_data):
     # Forecast the entire test set length
     predictions = model_fit.forecast(steps=len(test_data))
     
-    return evaluate_model(test_data, predictions, "ARIMA")
+    # Convert to numpy arrays for evaluation
+    return evaluate_model(test_data.values, predictions, "ARIMA")
 
 def train_evaluate_lstm(train_data, test_data, n_steps):
     """Trains and evaluates a standard LSTM model."""
@@ -125,21 +203,19 @@ def train_evaluate_hybrid_model(df, train_size, n_steps):
     # Get ARIMA's forecast for the test period
     arima_test_forecast = arima_model.forecast(steps=len(test_target))
 
-    # 2. Prepare data for the error-predicting LSTM
-    # The LSTM will use all features to predict the ARIMA residuals.
-    all_features = df.drop(columns=['Ticker']).values
-    # Align features with the training residuals (which are shorter by 1)
-    train_features_for_lstm = all_features[1:train_size]
-
-    X_train_res, y_train_res = create_sequences(np.column_stack([train_residuals, train_features_for_lstm]), n_steps)
-    # The LSTM's target `y` is the residual, which is the first column
-    y_train_res = X_train_res[:, -1, 0] 
-    # The LSTM's input `X` are the sequences of all features (including past residuals)
-    X_train_res = X_train_res[:, :, :]
-
-    # For testing, the LSTM will use the last `n_steps` of the training features to start predicting
-    test_features_for_lstm = all_features[train_size-n_steps:]
-    X_test_res, _ = create_sequences(test_features_for_lstm, n_steps)
+    # 2. Prepare simplified data for the error-predicting LSTM
+    # Use only the residuals as features for the LSTM to avoid dimensional issues
+    X_train_res, y_train_res = create_sequences(train_residuals.reshape(-1, 1), n_steps)
+    
+    # For testing, we need to predict residuals for the test period
+    # We'll use a simple approach: extend the residuals series with zeros for the test period
+    extended_residuals = np.concatenate([train_residuals, np.zeros(len(test_target))])
+    extended_residuals = extended_residuals.reshape(-1, 1)
+    
+    # Get test sequences starting from the end of training residuals
+    X_test_res, _ = create_sequences(extended_residuals[len(train_residuals)-n_steps:], n_steps)
+    # Only take the sequences that would predict the test period
+    X_test_res = X_test_res[:len(test_target)]
 
     # 3. Train LSTM to predict residuals
     print("Training Residual-LSTM... this may take a moment.")
@@ -152,16 +228,22 @@ def train_evaluate_hybrid_model(df, train_size, n_steps):
     residual_model.fit(X_train_res, y_train_res, epochs=50, batch_size=32, verbose=0)
     
     # 4. Make final hybrid prediction
-    predicted_residuals = residual_model.predict(X_test_res, verbose=0)
+    if len(X_test_res) > 0:
+        predicted_residuals = residual_model.predict(X_test_res, verbose=0)
+        # Final prediction = ARIMA forecast + LSTM's predicted error
+        final_predictions = arima_test_forecast.values[:len(predicted_residuals)] + predicted_residuals.flatten()
+    else:
+        # Fallback: use only ARIMA predictions
+        final_predictions = arima_test_forecast.values
     
-    # Final prediction = ARIMA forecast + LSTM's predicted error
-    final_predictions = arima_test_forecast.values + predicted_residuals.flatten()
+    # 5. Evaluate the hybrid model and generate detailed analysis
+    test_target_aligned = test_target.values[:len(final_predictions)]
+    test_dates = df.index[train_size:train_size+len(final_predictions)]
     
-    # 5. Evaluate the hybrid model
-    # The LSTM part of the model can't predict for the first `n_steps` of the test set,
-    # so we align the true values accordingly. This is a small discrepancy from the other models.
-    # For a robust comparison, we ensure the lengths match.
-    return evaluate_model(test_target.values[:len(final_predictions)], final_predictions, "Hybrid (ARIMA-LSTM)")
+    # Generate detailed analysis including directional accuracy
+    generate_detailed_analysis(test_target_aligned, final_predictions, test_dates, "Hybrid (ARIMA-LSTM)")
+    
+    return evaluate_model(test_target_aligned, final_predictions, "Hybrid (ARIMA-LSTM)")
 
 
 # --- Main Execution ---
