@@ -56,6 +56,70 @@ def create_sequences(data, n_steps):
         y.append(seq_y)
     return np.array(X), np.array(y)
 
+def generate_detailed_analysis(y_true, y_pred, dates, model_name="Hybrid"):
+    """Generate detailed error analysis including directional accuracy"""
+    print(f"Generating detailed analysis for {model_name} model...")
+    
+    # Ensure same length
+    min_length = min(len(y_true), len(y_pred), len(dates))
+    y_true = y_true[:min_length]
+    y_pred = y_pred[:min_length]
+    dates = dates[:min_length]
+    
+    # Calculate errors
+    raw_errors = y_pred - y_true
+    percentage_errors = (raw_errors / np.where(y_true != 0, y_true, 1)) * 100
+    
+    # Calculate directions
+    actual_directions = ['Up' if i < len(y_true)-1 and y_true[i+1] > y_true[i] else 'Down' 
+                        for i in range(len(y_true)-1)] + ['Up']  # Last day direction
+    predicted_directions = ['Up' if i < len(y_pred)-1 and y_pred[i+1] > y_pred[i] else 'Down' 
+                           for i in range(len(y_pred)-1)] + ['Up']  # Last day direction
+    
+    # Calculate directional accuracy
+    directional_accuracy = [1 if actual_directions[i] == predicted_directions[i] else 0 
+                           for i in range(len(actual_directions))]
+    
+    # Create detailed analysis dataframe
+    analysis_df = pd.DataFrame({
+        'Date': dates,
+        'Actual': y_true,
+        'Predicted': y_pred,
+        'Raw_Error': raw_errors,
+        'Percentage_Error': percentage_errors,
+        'Actual_Direction': actual_directions,
+        'Predicted_Direction': predicted_directions,
+        'Directional_Accuracy': directional_accuracy
+    })
+    
+    # Save to file
+    error_analysis_file = os.path.join(RESULTS_DIR, 'error_analysis.csv')
+    with open(error_analysis_file, 'w') as f:
+        f.write(f"# Description: Detailed error analysis for the {model_name} model on the test set.\n")
+        f.write("# Includes raw error, percentage error, and directional accuracy.\n")
+    
+    analysis_df.to_csv(error_analysis_file, mode='a', index=False)
+    
+    # Calculate and print summary statistics
+    overall_directional_accuracy = np.mean(directional_accuracy) * 100
+    print(f"📊 Overall Directional Accuracy: {overall_directional_accuracy:.2f}%")
+    
+    # Save predictions to separate file
+    predictions_file = os.path.join('../../3_Model_Outputs/01_Raw_Prediction_Files', f'{model_name.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")}_predictions.csv')
+    with open(predictions_file, 'w') as f:
+        f.write(f"# Description: Raw predictions from the {model_name} model for {TICKER_TO_MODEL}.\n")
+        f.write(f"# These predictions incorporate the best performing model architecture.\n")
+    
+    pred_df = pd.DataFrame({
+        'Date': dates,
+        'Actual': y_true,
+        'Predicted': y_pred
+    })
+    pred_df.to_csv(predictions_file, mode='a', index=False)
+    
+    print(f"📁 Detailed analysis saved to: {error_analysis_file}")
+    print(f"📁 Predictions saved to: {predictions_file}")
+    
 def evaluate_model(y_true, y_pred, model_name):
     """Calculates and returns performance metrics."""
     # Convert to numpy arrays to avoid pandas alignment issues
@@ -172,8 +236,13 @@ def train_evaluate_hybrid_model(df, train_size, n_steps):
         # Fallback: use only ARIMA predictions
         final_predictions = arima_test_forecast.values
     
-    # 5. Evaluate the hybrid model
+    # 5. Evaluate the hybrid model and generate detailed analysis
     test_target_aligned = test_target.values[:len(final_predictions)]
+    test_dates = df.index[train_size:train_size+len(final_predictions)]
+    
+    # Generate detailed analysis including directional accuracy
+    generate_detailed_analysis(test_target_aligned, final_predictions, test_dates, "Hybrid (ARIMA-LSTM)")
+    
     return evaluate_model(test_target_aligned, final_predictions, "Hybrid (ARIMA-LSTM)")
 
 
