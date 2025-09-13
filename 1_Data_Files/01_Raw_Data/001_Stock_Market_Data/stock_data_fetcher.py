@@ -9,7 +9,8 @@ end_date = '2023-12-31'
 
 # yfinance's end date is exclusive, so we set it to the day after our target end date
 # Note: The end date for yfinance is exclusive, so '2024-01-01' correctly includes data up to '2023-12-31'.
-data_raw = yf.download(tickers, start=start_date, end='2024-01-01')
+# Using auto_adjust=False to handle adj close missing problem
+data_raw = yf.download(tickers, start=start_date, end='2024-01-01', auto_adjust=False)
 
 # 2. Process the multi-level column index into a tidy format
 # We stack at level=1 (the ticker level) and rename the axes before resetting the index.
