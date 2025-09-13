@@ -11,15 +11,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- Configuration ---
-PROCESSED_DATA_DIR = '01_Data_Files/Cleaned_Data'
-PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, 'processed_stock_data_2010-2023.csv')
-RESULTS_DIR = '03_Results'
+PROCESSED_DATA_DIR = '../../1_Data_Files/02_Processed_Data'
+PROCESSED_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, 'feature_engineered_data.csv')
+RESULTS_DIR = '../../3_Model_Outputs'
 RESULTS_FILE = os.path.join(RESULTS_DIR, 'model_performance_comparison.csv')
 
 # Select a ticker for the case study
 TICKER_TO_MODEL = 'TSLA'
-# CRITICAL FIX: Corrected column name to match the output of the feature engineering script.
-TARGET_VARIABLE = 'Adj Close_normalized'
+# Target variable for prediction (normalized close price)
+TARGET_VARIABLE = 'Close_normalized'
 # Model Hyperparameters
 N_STEPS = 50 # Lookback window for LSTM
 
@@ -33,10 +33,12 @@ def create_output_directory():
 def load_processed_data():
     """Loads the final processed and feature-engineered dataset."""
     print(f"Loading processed data for ticker: {TICKER_TO_MODEL}")
-    df = pd.read_csv(PROCESSED_DATA_FILE, parse_dates=['Date'], index_col='Date')
+    df = pd.read_csv(PROCESSED_DATA_FILE, parse_dates=['Date'])
     ticker_df = df[df['Ticker'] == TICKER_TO_MODEL].copy()
     # Ensure data is sorted by date for time-series analysis
-    ticker_df.sort_index(inplace=True)
+    ticker_df.sort_values('Date', inplace=True)
+    ticker_df.set_index('Date', inplace=True)
+    print(f"Loaded {len(ticker_df)} records for {TICKER_TO_MODEL}")
     return ticker_df
 
 def create_sequences(data, n_steps):
@@ -58,10 +60,19 @@ def create_sequences(data, n_steps):
 
 def evaluate_model(y_true, y_pred, model_name):
     """Calculates and returns performance metrics."""
+    # Convert to numpy arrays to avoid indexing issues
+    y_true = np.array(y_true).flatten()
+    y_pred = np.array(y_pred).flatten()
+    
+    # Ensure same length
+    min_len = min(len(y_true), len(y_pred))
+    y_true = y_true[:min_len]
+    y_pred = y_pred[:min_len]
+    
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
-    # MAPE (Mean Absolute Percentage Error) is often useful for price prediction
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    # MAPE (Mean Absolute Percentage Error) - handle division by zero
+    mape = np.mean(np.abs((y_true - y_pred) / np.maximum(np.abs(y_true), 1e-8))) * 100
     print(f"{model_name} Performance -> RMSE: {rmse:.4f}, MAE: {mae:.4f}, MAPE: {mape:.2f}%")
     return {'Model': model_name, 'RMSE': rmse, 'MAE': mae, 'MAPE': mape}
 

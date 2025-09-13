@@ -1,0 +1,3 @@
+Model_Type,Primary_Metric,Secondary_Metric,Purpose,Status
+ARIMA_Price_Prediction,RMSE: 0.0149,MAE: 0.0116,Stock Price Forecasting,Completed
+GARCH_Volatility_Modeling,AIC: 26818.63,LogLikelihood: -13405.31,Volatility Modeling,Completed
