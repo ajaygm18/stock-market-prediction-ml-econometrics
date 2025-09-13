@@ -6,10 +6,10 @@ import numpy as np
 
 # --- Configuration ---
 # Input files from the data acquisition step.
-RAW_DATA_DIR = '01_Data_Files/Raw_Data'
-PROCESSED_DATA_DIR = '01_Data_Files/Cleaned_Data'
-STOCK_DATA_FILE = os.path.join(RAW_DATA_DIR, 'stock_data_2010-2023.csv')
-MACRO_DATA_FILE = os.path.join(RAW_DATA_DIR, 'macroeconomic_indicators_raw.csv')
+RAW_DATA_DIR = '../../1_Data_Files/01_Raw_Data'
+PROCESSED_DATA_DIR = '../../1_Data_Files/02_Processed_Data'
+STOCK_DATA_FILE = os.path.join(RAW_DATA_DIR, '001_Stock_Market_Data', 'stock_data_2010-2023.csv')
+MACRO_DATA_FILE = os.path.join(RAW_DATA_DIR, '002_Macroeconomic_Indicators', 'macroeconomic_indicators_raw.csv')
 
 # Output file for the processed data.
 PROCESSED_OUTPUT_FILE = os.path.join(PROCESSED_DATA_DIR, 'processed_stock_data_2010-2023.csv')
@@ -44,14 +44,14 @@ def process_data(stock_df, macro_df):
     merged_df = stock_df.merge(daily_macro_df, left_index=True, right_index=True, how='left')
     
     # Forward fill any remaining NaNs in the merged macro columns
-    merged_df.fillna(method='ffill', inplace=True)
+    merged_df = merged_df.ffill()
     
     # 2. Feature Engineering
     print("Performing feature engineering...")
     
-    # Use 'Adj Close' for calculations to account for splits/dividends
-    merged_df['daily_return'] = merged_df.groupby('Ticker')['Adj Close'].pct_change()
-    merged_df['rolling_avg_50d'] = merged_df.groupby('Ticker')['Adj Close'].transform(lambda x: x.rolling(window=50).mean())
+    # Use 'Close' for calculations  
+    merged_df['daily_return'] = merged_df.groupby('Ticker')['Close'].pct_change()
+    merged_df['rolling_avg_50d'] = merged_df.groupby('Ticker')['Close'].transform(lambda x: x.rolling(window=50).mean())
 
     # Calculate GARCH volatility for each ticker
     volatility_list = []
@@ -74,24 +74,32 @@ def process_data(stock_df, macro_df):
 
     # 3. Normalization
     print("Normalizing features...")
-    features_to_normalize = [
-        'Adj Close', 'Volume', 'daily_return', 'rolling_avg_50d', 'volatility_garch',
-        'GDP_Growth_Rate_Annualized', 'Interest_Rate_Federal_Funds', 
-        'Inflation_Rate_CPI_YoY', 'Unemployment_Rate'
+    print("Available columns:", merged_df.columns.tolist())
+    
+    # Update features to normalize based on actual available columns
+    available_features = []
+    potential_features = [
+        'Close', 'Volume', 'daily_return', 'rolling_avg_50d', 'volatility_garch',
+        'GDP_Growth_Rate_YoY', 'Interest_Rate_Federal_Funds', 
+        'Inflation_Rate_CPI_YoY', 'GDP_Real', 'CPI_All_Items'
     ]
+    
+    for feature in potential_features:
+        if feature in merged_df.columns:
+            available_features.append(feature)
+    
+    print(f"Features to normalize: {available_features}")
+    
     scaler = MinMaxScaler()
     # Fit and transform the data
-    normalized_data = scaler.fit_transform(merged_df[features_to_normalize])
+    normalized_data = scaler.fit_transform(merged_df[available_features])
     
     # Create a new dataframe with normalized columns
-    normalized_df = pd.DataFrame(normalized_data, columns=[f"{col}_normalized" for col in features_to_normalize], index=merged_df.index)
+    normalized_df = pd.DataFrame(normalized_data, columns=[f"{col}_normalized" for col in available_features], index=merged_df.index)
     
     # Combine with non-normalized columns
     final_df = pd.concat([merged_df[['Ticker']], normalized_df], axis=1)
     final_df.reset_index(inplace=True)
-    
-    # Rename columns to match the data dictionary
-    final_df.rename(columns={'Adj Close_normalized': 'adj_close_normalized', 'Volume_normalized': 'volume_normalized'}, inplace=True)
     
     return final_df
 
